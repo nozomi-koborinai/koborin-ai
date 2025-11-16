@@ -1,0 +1,137 @@
+name: CDKTF Plan
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/plan-infra.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to plan infra for'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+          - shared
+
+jobs:
+  cdktf-plan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    timeout-minutes: 60
+    env:
+      PROJECT_ID: ${{ secrets.PROJECT_ID }}
+      PROJECT_NUMBER: ${{ secrets.PROJECT_NUMBER }}
+      REGION: asia-northeast1
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT_MAIL }}
+      BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+      IAP_USER: ${{ secrets.IAP_USER }}
+      OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+      OAUTH_CLIENT_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Decide target environment
+        id: decide-env
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "TF_TARGET_ENV=dev" >> "$GITHUB_ENV"
+            echo "BACKEND_PREFIX=dev" >> "$GITHUB_ENV"
+          else
+            echo "TF_TARGET_ENV=${{ github.event.inputs.environment }}" >> "$GITHUB_ENV"
+            echo "BACKEND_PREFIX=${{ github.event.inputs.environment }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v2"
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: infrastructure/package-lock.json
+
+      - name: Install CDKTF dependencies
+        working-directory: infrastructure
+        run: npm ci
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Build CDKTF project
+        working-directory: infrastructure
+        run: |
+          rm -rf lib cdktf.out
+          npm run build
+
+      - name: Run unit tests
+        working-directory: infrastructure
+        run: npm test
+
+      - name: Generate Terraform code with CDKTF
+        working-directory: infrastructure
+        run: |
+          echo "Synthesizing for environment: $TF_TARGET_ENV"
+          npx cdktf synth --app="TF_VAR_environment=$TF_TARGET_ENV node lib/main.js"
+
+      - name: Check Terraform Format
+        working-directory: infrastructure/cdktf.out/stacks/${{ env.TF_TARGET_ENV }}
+        run: terraform fmt -check -diff -recursive
+
+      - name: Initialize Terraform
+        working-directory: infrastructure/cdktf.out/stacks/${{ env.TF_TARGET_ENV }}
+        run: |
+          echo "Initializing Terraform with prefix: $BACKEND_PREFIX"
+          terraform init -input=false -backend-config="bucket=${{ env.BUCKET_NAME }}" -backend-config="prefix=$BACKEND_PREFIX"
+
+      - name: Get current Cloud Run image (if exists)
+        if: env.TF_TARGET_ENV != 'shared'
+        id: current-image
+        run: |
+          if [ "$TF_TARGET_ENV" = "prod" ]; then
+            SERVICE_NAME="koborin-ai-web-prod"
+          else
+            SERVICE_NAME="koborin-ai-web-dev"
+          fi
+          CURRENT_IMAGE=$(gcloud run services describe ${SERVICE_NAME} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format='value(spec.template.spec.containers[0].image)' 2>/dev/null || echo "gcr.io/cloudrun/hello")
+          echo "CURRENT_IMAGE=${CURRENT_IMAGE}" >> $GITHUB_OUTPUT
+          echo "Current image: ${CURRENT_IMAGE}"
+
+      - name: Run Terraform Plan
+        working-directory: infrastructure/cdktf.out/stacks/${{ env.TF_TARGET_ENV }}
+        run: |
+          PLAN_ARGS="-no-color -lock=false -input=false"
+          PLAN_ARGS="$PLAN_ARGS -var=project_id=${{ env.PROJECT_ID }}"
+          PLAN_ARGS="$PLAN_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
+          PLAN_ARGS="$PLAN_ARGS -var=bucket_name=${{ env.BUCKET_NAME }}"
+          PLAN_ARGS="$PLAN_ARGS -var=iap_user=${{ env.IAP_USER }}"
+          PLAN_ARGS="$PLAN_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
+          PLAN_ARGS="$PLAN_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
+          
+          if [ "$TF_TARGET_ENV" != "shared" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var=image_uri=${{ steps.current-image.outputs.CURRENT_IMAGE }}"
+          fi
+          
+          terraform plan $PLAN_ARGS
