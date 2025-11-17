@@ -96,9 +96,11 @@ jobs:
 
       - name: Generate Terraform code with CDKTF
         working-directory: infrastructure
+        env:
+          TF_VAR_environment: ${{ env.TF_TARGET_ENV }}
         run: |
           echo "Synthesizing for environment: $TF_TARGET_ENV"
-          npx cdktf synth --app="TF_VAR_environment=$TF_TARGET_ENV node lib/main.js"
+          npx cdktf synth
 
       - name: Check Terraform Format
         working-directory: infrastructure/cdktf.out/stacks/${{ env.TF_TARGET_ENV }}
