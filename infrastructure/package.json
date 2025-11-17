@@ -2,7 +2,6 @@
   "name": "koborin-ai-infrastructure",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w -p tsconfig.json",
@@ -23,6 +22,7 @@
     "@typescript-eslint/eslint-plugin": "^8.46.4",
     "@typescript-eslint/parser": "^8.46.4",
     "@vitest/coverage-v8": "^4.0.9",
+    "cdktf-cli": "^0.21.0",
     "eslint": "^9",
     "eslint-config-prettier": "^9.1.0",
     "eslint-import-resolver-typescript": "^4.4.4",
