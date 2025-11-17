@@ -19,6 +19,7 @@ dist/
 
 # CDKTF / Terraform
 cdktf.out/
+imports/
 terraform.tfstate
 terraform.tfstate.backup
 .terraform/

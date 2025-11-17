@@ -77,6 +77,10 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Generate CDKTF providers
+        working-directory: infrastructure
+        run: npx cdktf get
+
       - name: Build CDKTF project
         working-directory: infrastructure
         run: |
