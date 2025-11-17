@@ -137,13 +137,16 @@ jobs:
         run: |
           PLAN_ARGS="-no-color -lock=false -input=false"
           PLAN_ARGS="$PLAN_ARGS -var=project_id=${{ env.PROJECT_ID }}"
-          PLAN_ARGS="$PLAN_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
           PLAN_ARGS="$PLAN_ARGS -var=bucket_name=${{ env.BUCKET_NAME }}"
-          PLAN_ARGS="$PLAN_ARGS -var=iap_user=${{ env.IAP_USER }}"
-          PLAN_ARGS="$PLAN_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
-          PLAN_ARGS="$PLAN_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
           
-          if [ "$TF_TARGET_ENV" != "shared" ]; then
+          if [ "$TF_TARGET_ENV" = "shared" ]; then
+            # Shared stack needs OAuth credentials and IAP user for dev backend IAP configuration
+            PLAN_ARGS="$PLAN_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
+            PLAN_ARGS="$PLAN_ARGS -var=iap_user=${{ env.IAP_USER }}"
+            PLAN_ARGS="$PLAN_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
+            PLAN_ARGS="$PLAN_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
+          else
+            # Dev/Prod stacks only need image URI
             PLAN_ARGS="$PLAN_ARGS -var=image_uri=${{ steps.current-image.outputs.CURRENT_IMAGE }}"
           fi
           
@@ -154,13 +157,16 @@ jobs:
         run: |
           APPLY_ARGS="-auto-approve -input=false"
           APPLY_ARGS="$APPLY_ARGS -var=project_id=${{ env.PROJECT_ID }}"
-          APPLY_ARGS="$APPLY_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
           APPLY_ARGS="$APPLY_ARGS -var=bucket_name=${{ env.BUCKET_NAME }}"
-          APPLY_ARGS="$APPLY_ARGS -var=iap_user=${{ env.IAP_USER }}"
-          APPLY_ARGS="$APPLY_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
-          APPLY_ARGS="$APPLY_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
           
-          if [ "$TF_TARGET_ENV" != "shared" ]; then
+          if [ "$TF_TARGET_ENV" = "shared" ]; then
+            # Shared stack needs OAuth credentials and IAP user for dev backend IAP configuration
+            APPLY_ARGS="$APPLY_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
+            APPLY_ARGS="$APPLY_ARGS -var=iap_user=${{ env.IAP_USER }}"
+            APPLY_ARGS="$APPLY_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
+            APPLY_ARGS="$APPLY_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
+          else
+            # Dev/Prod stacks only need image URI
             APPLY_ARGS="$APPLY_ARGS -var=image_uri=${{ steps.current-image.outputs.CURRENT_IMAGE }}"
           fi
           
@@ -188,13 +194,16 @@ jobs:
         run: |
           PLAN_ARGS="-no-color -lock=false -input=false"
           PLAN_ARGS="$PLAN_ARGS -var=project_id=${{ env.PROJECT_ID }}"
-          PLAN_ARGS="$PLAN_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
           PLAN_ARGS="$PLAN_ARGS -var=bucket_name=${{ env.BUCKET_NAME }}"
-          PLAN_ARGS="$PLAN_ARGS -var=iap_user=${{ env.IAP_USER }}"
-          PLAN_ARGS="$PLAN_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
-          PLAN_ARGS="$PLAN_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
           
-          if [ "$TF_TARGET_ENV" != "shared" ]; then
+          if [ "$TF_TARGET_ENV" = "shared" ]; then
+            # Shared stack needs OAuth credentials and IAP user for dev backend IAP configuration
+            PLAN_ARGS="$PLAN_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
+            PLAN_ARGS="$PLAN_ARGS -var=iap_user=${{ env.IAP_USER }}"
+            PLAN_ARGS="$PLAN_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
+            PLAN_ARGS="$PLAN_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
+          else
+            # Dev/Prod stacks only need image URI
             PLAN_ARGS="$PLAN_ARGS -var=image_uri=${{ steps.current-image-verify.outputs.CURRENT_IMAGE }}"
           fi
           
