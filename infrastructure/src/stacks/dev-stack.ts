@@ -54,6 +54,9 @@ export class DevStack extends TerraformStack {
           percent: 100,
         },
       ],
+      lifecycle: {
+        ignoreChanges: ["scaling"],
+      },
     })
   }
 }
