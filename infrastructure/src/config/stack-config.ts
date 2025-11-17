@@ -18,6 +18,16 @@ export type SharedStackConfig = {
 }
 
 /**
+ * Configuration for dev/prod stacks.
+ * Only the container image URI varies per deployment.
+ */
+export type EnvironmentStackConfig = {
+  projectId: string
+  stateBucket: string
+  imageUri: string
+}
+
+/**
  * Creates configuration for shared stack by reading TerraformVariables.
  * Only truly variable values are injected from GitHub Actions.
  */
@@ -60,5 +70,32 @@ export function createSharedStackConfig(scope: Construct): SharedStackConfig {
     iapUser,
     oauthClientId,
     oauthClientSecret,
+  }
+}
+
+/**
+ * Creates configuration for dev/prod stacks.
+ * Only the image URI is injected from GitHub Actions.
+ */
+export function createEnvironmentStackConfig(scope: Construct): EnvironmentStackConfig {
+  const projectId = new TerraformVariable(scope, "project_id", {
+    type: "string",
+    description: "Google Cloud Project ID.",
+  }).stringValue
+
+  const stateBucket = new TerraformVariable(scope, "bucket_name", {
+    type: "string",
+    description: "GCS bucket used for Terraform state (shared across stacks).",
+  }).stringValue
+
+  const imageUri = new TerraformVariable(scope, "image_uri", {
+    type: "string",
+    description: "Container image URI to deploy to Cloud Run.",
+  }).stringValue
+
+  return {
+    projectId,
+    stateBucket,
+    imageUri,
   }
 }
