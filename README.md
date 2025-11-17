@@ -7,15 +7,110 @@ The repository hosts both the Next.js application and the Google Cloud infrastru
 
 - Deliver a fast personal site with MDX-based content, deployable to Cloud Run (dev/prod) via a shared HTTPS load balancer.
 - Keep every change (infra + app) under version control and shipped only through GitHub Actions using Workload Identity Federation.
-- Maintain strong observability: Cloud Logging/Monitoring/Trace, structured logging, PV tracking, and a secure contact flow.
+- Maintain o11y: Cloud Logging/Monitoring/Trace, structured logging, PV tracking, and a secure contact flow.
 
 ## Architecture Snapshot
+
+```mermaid
+---
+title: "Google Cloud Project"
+---
+flowchart LR
+    subgraph TF_STATE["TF Backend State - GCS"]
+        STATE_SHARED["shared"]
+        STATE_DEV["dev"]
+        STATE_PROD["prod"]
+    end
+    
+    subgraph SHARED["Shared Resources"]
+        APIS["APIs"]
+        ARTIFACT["Artifact Registry"]
+        WIF["Workload Identity<br/>Pool/Provider"]
+        DNS_ZONE["DNS Zone<br/>koborin-ai"]
+    end
+    
+    subgraph DNS["DNS A Records"]
+        DEV_DOMAIN["dev.koborin.ai"]
+        PROD_DOMAIN["koborin.ai"]
+    end
+    
+    subgraph LB["Unified HTTPS LB - shared"]
+        STATIC_IP["Static IP<br/>PREMIUM tier"]
+        SSL_CERT["Managed SSL Cert<br/>multi-domain"]
+        URL_MAP["URL Map<br/>host routing"]
+        HTTPS_PROXY["HTTPS Proxy"]
+    end
+    
+    subgraph DEV_BACKEND["Dev Backend"]
+        DEV_IAP["IAP<br/>+ X-Robots-Tag"]
+        DEV_NEG["Serverless NEG"]
+        DEV_CR["Cloud Run<br/>koborin-ai-web-dev<br/>(LB-only ingress)"]
+    end
+    
+    subgraph PROD_BACKEND["Prod Backend"]
+        PROD_NEG["Serverless NEG"]
+        PROD_CR["Cloud Run<br/>koborin-ai-web-prod<br/>(LB-only ingress)"]
+    end
+    
+    subgraph CICD["GitHub Actions"]
+        GH_WIF["Workload Identity<br/>Federation"]
+        TF_SA["Terraform SA"]
+    end
+    
+    STATE_SHARED -.-> SHARED
+    STATE_SHARED -.-> LB
+    STATE_DEV -.-> DEV_BACKEND
+    STATE_PROD -.-> PROD_BACKEND
+    
+    ARTIFACT -.->|"Container Image"| DEV_CR
+    ARTIFACT -.->|"Container Image"| PROD_CR
+    
+    DEV_DOMAIN --> STATIC_IP
+    PROD_DOMAIN --> STATIC_IP
+    STATIC_IP --> SSL_CERT
+    SSL_CERT --> HTTPS_PROXY
+    HTTPS_PROXY --> URL_MAP
+    
+    URL_MAP -->|"dev host"| DEV_IAP
+    URL_MAP -->|"prod host"| PROD_NEG
+    
+    DEV_IAP --> DEV_NEG
+    DEV_NEG --> DEV_CR
+    PROD_NEG --> PROD_CR
+    
+    GH_WIF -.->|"Authenticate"| WIF
+    WIF -.->|"Impersonate"| TF_SA
+    TF_SA -.->|"Plan/Apply"| TF_STATE
+    
+    style TF_STATE fill:#E8E8E8,color:#000,stroke:#666,stroke-width:2px
+    style STATE_SHARED fill:#F5F5F5,color:#000
+    style STATE_DEV fill:#F5F5F5,color:#000
+    style STATE_PROD fill:#F5F5F5,color:#000
+    style APIS fill:#9E9E9E,color:#fff
+    style ARTIFACT fill:#9E9E9E,color:#fff
+    style WIF fill:#9E9E9E,color:#fff
+    style DNS_ZONE fill:#9E9E9E,color:#fff
+    style STATIC_IP fill:#00B6AC,color:#fff
+    style SSL_CERT fill:#00B6AC,color:#fff
+    style URL_MAP fill:#00B6AC,color:#fff
+    style HTTPS_PROXY fill:#00B6AC,color:#fff
+    style DEV_IAP fill:#F76560,color:#fff
+    style DEV_CR fill:#4A90E2,color:#fff
+    style PROD_CR fill:#4A90E2,color:#fff
+    style GH_WIF fill:#FFB74D,color:#000
+    style TF_SA fill:#FFB74D,color:#000
+```
+
+**Key Differences by Environment:**
 
 | Layer | Dev (`dev.koborin.ai`) | Prod (`koborin.ai`) |
 | --- | --- | --- |
 | Runtime | Cloud Run (`koborin-ai-web-dev`) | Cloud Run (`koborin-ai-web-prod`) |
-| Access | IAP allow list (via Secret) + `X-Robots-Tag: noindex` | Public internet |
-| Content | Same MDX corpus; dev builds may include drafts | Reviewed content only |
+| Access | IAP allow list + `X-Robots-Tag: noindex` | Public (no IAP) |
+| Ingress | `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` | `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` |
+| Scaling | Min: 0, Max: 1 | Min: 0, Max: 10 |
+| Env Vars | `NODE_ENV=development`, `NEXT_PUBLIC_ENV=dev` | `NODE_ENV=production`, `NEXT_PUBLIC_ENV=prod` |
+| Content | Same MDX; may include drafts | Reviewed content only |
 | Analytics | GA4 (debug view) + optional server events | GA4 + server events + Cloud Monitoring |
 
 ## Tech Stack
@@ -66,24 +161,50 @@ npm run test:infra --prefix infrastructure
 
 - CDKTF `cdktf.json` uses `node lib/main.js` and pins `google` / `google-beta` providers to `~> 6.50`.
 - Each stack configures `GcsBackend` with the same bucket but different prefixes (`shared`, `dev`, `prod`).
-- **Shared stack** (currently implemented):
-  - API enablement (Run, Compute, IAM, DNS, Artifact Registry, IAP, Monitoring, Logging).
-  - Artifact Registry for container images.
-  - Global static IP (PREMIUM tier).
-  - Managed SSL Certificate (multi-domain: `koborin.ai`, `dev.koborin.ai`).
-  - Complete HTTPS Load Balancer:
-    - Serverless NEGs (dev/prod) referencing Cloud Run services by name.
-    - Backend Services (dev with IAP + `X-Robots-Tag: noindex`, prod without IAP).
-    - URL Map (host-based routing).
-    - Target HTTPS Proxy.
-    - Global Forwarding Rule.
-- **Dev/Prod stacks** (to be created):
-  - Cloud Run services (`koborin-ai-web-dev` / `koborin-ai-web-prod`).
-  - Environment-specific configurations and secrets.
-- **Resources to be imported**:
-  - DNS managed zone (`koborin-ai`).
-  - Workload Identity Pool & Provider.
-  - Terraform deployer service account.
+
+### Shared Stack (✅ Implemented)
+
+- **API enablement**: Run, Compute, IAM, DNS, Artifact Registry, IAP, Monitoring, Logging, Certificate Manager.
+- **Artifact Registry**: Container images repository (`koborin-ai-web`).
+- **Global static IP**: PREMIUM tier for HTTPS load balancer.
+- **Managed SSL Certificate**: Multi-domain (`koborin.ai`, `dev.koborin.ai`).
+- **HTTPS Load Balancer**:
+  - Serverless NEGs (dev/prod) referencing Cloud Run services by name.
+  - Backend Services:
+    - Dev: IAP enabled + `X-Robots-Tag: noindex, nofollow` header.
+    - Prod: No IAP, logging enabled.
+  - URL Map (host-based routing).
+  - Target HTTPS Proxy.
+  - Global Forwarding Rule.
+- **Workload Identity Federation**:
+  - Pool: `github-actions-pool`.
+  - Provider: `actions-firebase-provider` (OIDC issuer: `https://token.actions.githubusercontent.com`).
+  - Service Account: `github-actions-service@{project}.iam.gserviceaccount.com`.
+  - IAM binding: Subject-based binding for repository `nozomi-koborinai/koborin-ai`.
+  - 12 Project IAM roles granted to Terraform SA.
+- **DNS Configuration**:
+  - DNS zone reference: `koborin-ai` (data source).
+  - A records: `koborin.ai.` and `dev.koborin.ai.` pointing to static IP (TTL: 300).
+
+### Dev Stack (✅ Implemented)
+
+- **Cloud Run Service**: `koborin-ai-web-dev`.
+  - Ingress: `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` (LB-only access).
+  - Execution Environment: Gen2.
+  - Environment Variables:
+    - `NODE_ENV=development` (runtime mode).
+    - `NEXT_PUBLIC_ENV=dev` (client-side environment identifier).
+  - Scaling: Min 0, Max 1.
+
+### Prod Stack (✅ Implemented)
+
+- **Cloud Run Service**: `koborin-ai-web-prod`.
+  - Ingress: `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` (LB-only access).
+  - Execution Environment: Gen2.
+  - Environment Variables:
+    - `NODE_ENV=production` (runtime mode).
+    - `NEXT_PUBLIC_ENV=prod` (client-side environment identifier).
+  - Scaling: Min 0, Max 10.
 
 ## Contact & Analytics Design (planned)
 
@@ -101,9 +222,12 @@ npm run test:infra --prefix infrastructure
 
 ## Current Status
 
-- ✅ Infrastructure: Shared stack implemented with complete HTTPS LB setup.
-- ✅ CI/CD: GitHub Actions workflows for plan/apply (shared/dev/prod).
-- ✅ Documentation: README and AGENTS.md with coding standards.
-- ⏳ Application: Next.js app to be scaffolded.
-- ⏳ Dev/Prod stacks: Cloud Run services to be created.
-- ⏳ DNS/WIF: Existing resources to be imported into Terraform state.
+- ✅ **Infrastructure**:
+  - Shared stack: HTTPS LB, Artifact Registry, Workload Identity, DNS A records.
+  - Dev stack: Cloud Run service (`koborin-ai-web-dev`).
+  - Prod stack: Cloud Run service (`koborin-ai-web-prod`).
+- ✅ **CI/CD**: GitHub Actions workflows for plan/apply (shared/dev/prod) with Workload Identity Federation.
+- ✅ **Documentation**: README with architecture diagram, AGENTS.md with coding standards and IaC philosophy.
+- ✅ **Testing**: Unit tests with 100% coverage for infrastructure code.
+- ⏳ **Application**: Next.js app to be scaffolded.
+- ⏳ **Content**: MDX authoring workflow to be established.
