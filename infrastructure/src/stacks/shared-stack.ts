@@ -6,9 +6,16 @@ import { ComputeManagedSslCertificate } from "@cdktf/provider-google/lib/compute
 import { ComputeRegionNetworkEndpointGroup } from "@cdktf/provider-google/lib/compute-region-network-endpoint-group"
 import { ComputeTargetHttpsProxy } from "@cdktf/provider-google/lib/compute-target-https-proxy"
 import { ComputeUrlMap } from "@cdktf/provider-google/lib/compute-url-map"
+import { DataGoogleDnsManagedZone } from "@cdktf/provider-google/lib/data-google-dns-managed-zone"
+import { DnsRecordSet } from "@cdktf/provider-google/lib/dns-record-set"
+import { IamWorkloadIdentityPool } from "@cdktf/provider-google/lib/iam-workload-identity-pool"
+import { IamWorkloadIdentityPoolProvider } from "@cdktf/provider-google/lib/iam-workload-identity-pool-provider"
 import { IapWebBackendServiceIamBinding } from "@cdktf/provider-google/lib/iap-web-backend-service-iam-binding"
+import { ProjectIamMember } from "@cdktf/provider-google/lib/project-iam-member"
 import { ProjectService } from "@cdktf/provider-google/lib/project-service"
 import { GoogleProvider } from "@cdktf/provider-google/lib/provider"
+import { ServiceAccount } from "@cdktf/provider-google/lib/service-account"
+import { ServiceAccountIamMember } from "@cdktf/provider-google/lib/service-account-iam-member"
 import { TerraformStack } from "cdktf"
 import { GcsBackend } from "cdktf/lib/backends/gcs-backend"
 import { Construct } from "constructs"
@@ -27,6 +34,7 @@ const REQUIRED_APIS = [
   "iap.googleapis.com",
   "monitoring.googleapis.com",
   "logging.googleapis.com",
+  "certificatemanager.googleapis.com",
 ]
 
 /**
@@ -256,6 +264,117 @@ export class SharedStack extends TerraformStack {
       networkTier: "PREMIUM",
       ipAddress: staticIp.address,
       dependsOn: [httpsProxy, staticIp],
+    })
+
+    // ========================================
+    // Workload Identity (for GitHub Actions)
+    // ========================================
+    // Security Note: While pool/provider IDs and project numbers are hardcoded here,
+    // this configuration is secure due to multi-layered protection:
+    // 1. attributeCondition restricts access to repository_owner "nozomi-koborinai" only
+    // 2. IAM binding grants impersonation only to specific subject (nozomi-koborinai/koborin-ai)
+    // 3. GitHub issues OIDC tokens that must match these conditions
+    // Even if someone discovers these IDs, they cannot authenticate without:
+    // - Owning the nozomi-koborinai GitHub account
+    // - Running workflows from the koborin-ai repository
+    // This follows Google's Workload Identity Federation design where IDs are public-safe.
+
+    // Workload Identity Pool
+    const workloadIdentityPool = new IamWorkloadIdentityPool(this, "github-actions-pool", {
+      project: config.projectId,
+      workloadIdentityPoolId: "github-actions-pool",
+      displayName: "github-actions-pool",
+      description: "Workload Identity Pool for GitHub Actions workflows",
+    })
+
+    // Workload Identity Provider (GitHub OIDC)
+    new IamWorkloadIdentityPoolProvider(this, "github-provider", {
+      project: config.projectId,
+      workloadIdentityPoolId: workloadIdentityPool.workloadIdentityPoolId,
+      workloadIdentityPoolProviderId: "actions-firebase-provider",
+      displayName: "github-actions-provider",
+      description: "GitHub Actions OIDC provider",
+      // Only allow workflows from repositories owned by nozomi-koborinai
+      attributeCondition: 'assertion.repository_owner == "nozomi-koborinai"',
+      attributeMapping: {
+        "google.subject": "assertion.repository",
+        "attribute.repository_owner": "assertion.repository_owner",
+      },
+      oidc: {
+        issuerUri: "https://token.actions.githubusercontent.com",
+      },
+    })
+
+    // Service Account for Terraform deployment
+    const terraformSa = new ServiceAccount(this, "github-actions-sa", {
+      project: config.projectId,
+      accountId: "github-actions-service",
+      displayName: "github-actions-service",
+      description: "Service account for GitHub Actions to deploy via Terraform",
+    })
+
+    // Allow Workload Identity Pool to impersonate the service account
+    // Uses subject-based binding to restrict access to this specific repository only
+    // (nozomi-koborinai/koborin-ai). This is more restrictive than attribute-based
+    // principalSet binding which would allow all repos owned by nozomi-koborinai.
+    new ServiceAccountIamMember(this, "github-wif-user", {
+      serviceAccountId: terraformSa.name,
+      role: "roles/iam.workloadIdentityUser",
+      member: `principal://iam.googleapis.com/projects/${config.projectNumber}/locations/global/workloadIdentityPools/${workloadIdentityPool.workloadIdentityPoolId}/subject/nozomi-koborinai/koborin-ai`,
+    })
+
+    // Grant necessary roles to the Terraform deployer service account
+    const terraformRoles = [
+      "roles/artifactregistry.admin",
+      "roles/cloudbuild.builds.builder",
+      "roles/run.admin",
+      "roles/compute.admin",
+      "roles/iap.admin",
+      "roles/logging.admin",
+      "roles/logging.viewer",
+      "roles/monitoring.admin",
+      "roles/resourcemanager.projectIamAdmin",
+      "roles/iam.serviceAccountUser",
+      "roles/serviceusage.serviceUsageAdmin",
+      "roles/storage.objectAdmin",
+    ]
+
+    terraformRoles.forEach((role) => {
+      new ProjectIamMember(this, `terraform-sa-${role.replace(/\./g, "-").replace(/\//g, "-")}`, {
+        project: config.projectId,
+        role: role,
+        member: `serviceAccount:${terraformSa.email}`,
+      })
+    })
+
+    // ========================================
+    // DNS Records
+    // ========================================
+
+    // Reference existing DNS zone (created via Cloud Domains)
+    const dnsZone = new DataGoogleDnsManagedZone(this, "dns-zone", {
+      project: config.projectId,
+      name: "koborin-ai",
+    })
+
+    // A record for root domain (koborin.ai → Static IP)
+    new DnsRecordSet(this, "dns-root-a", {
+      project: config.projectId,
+      managedZone: dnsZone.name,
+      name: "koborin.ai.",
+      type: "A",
+      ttl: 300,
+      rrdatas: [staticIp.address],
+    })
+
+    // A record for dev subdomain (dev.koborin.ai → Static IP)
+    new DnsRecordSet(this, "dns-dev-a", {
+      project: config.projectId,
+      managedZone: dnsZone.name,
+      name: "dev.koborin.ai.",
+      type: "A",
+      ttl: 300,
+      rrdatas: [staticIp.address],
     })
 
   }
