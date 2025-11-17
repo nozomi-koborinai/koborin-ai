@@ -201,4 +201,123 @@ describe("SharedStack", () => {
     expect(backend).toBeDefined()
     expect(backend.prefix).toBe("shared")
   })
+
+  it("should create Workload Identity Pool for GitHub Actions", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const pools = resources.google_iam_workload_identity_pool
+
+    const poolKey = Object.keys(pools)[0]
+    expect(pools[poolKey].workload_identity_pool_id).toBe("github-actions-pool")
+    expect(pools[poolKey].display_name).toBe("github-actions-pool")
+  })
+
+  it("should create Workload Identity Provider with GitHub OIDC", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const providers = resources.google_iam_workload_identity_pool_provider
+
+    const providerKey = Object.keys(providers)[0]
+    expect(providers[providerKey].workload_identity_pool_provider_id).toBe("actions-firebase-provider")
+    expect(providers[providerKey].display_name).toBe("github-actions-provider")
+    expect(providers[providerKey].attribute_condition).toBe('assertion.repository_owner == "nozomi-koborinai"')
+    expect(providers[providerKey].attribute_mapping["google.subject"]).toBe("assertion.repository")
+    expect(providers[providerKey].attribute_mapping["attribute.repository_owner"]).toBe("assertion.repository_owner")
+    expect(providers[providerKey].oidc.issuer_uri).toBe("https://token.actions.githubusercontent.com")
+  })
+
+  it("should create Service Account for GitHub Actions", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const serviceAccounts = resources.google_service_account
+
+    const saKey = Object.keys(serviceAccounts)[0]
+    expect(serviceAccounts[saKey].account_id).toBe("github-actions-service")
+    expect(serviceAccounts[saKey].display_name).toBe("github-actions-service")
+  })
+
+  it("should grant Workload Identity User role to specific repository", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const iamMembers = resources.google_service_account_iam_member
+
+    const wifKey = Object.keys(iamMembers).find((key) => key.includes("github-wif-user"))
+    expect(wifKey).toBeDefined()
+    expect(iamMembers[wifKey].role).toBe("roles/iam.workloadIdentityUser")
+  })
+
+  it("should grant all required project roles to Terraform SA", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const projectIamMembers = resources.google_project_iam_member
+
+    const expectedRoles = [
+      "roles/artifactregistry.admin",
+      "roles/cloudbuild.builds.builder",
+      "roles/run.admin",
+      "roles/compute.admin",
+      "roles/iap.admin",
+      "roles/logging.admin",
+      "roles/logging.viewer",
+      "roles/monitoring.admin",
+      "roles/resourcemanager.projectIamAdmin",
+      "roles/iam.serviceAccountUser",
+      "roles/serviceusage.serviceUsageAdmin",
+      "roles/storage.objectAdmin",
+    ]
+
+    expectedRoles.forEach((role) => {
+      const memberKey = Object.keys(projectIamMembers).find((key) =>
+        projectIamMembers[key].role === role
+      )
+      expect(memberKey).toBeDefined()
+      expect(projectIamMembers[memberKey].role).toBe(role)
+    })
+  })
+
+  it("should enable Certificate Manager API", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const projectServices = resources.google_project_service
+
+    const certManagerKey = Object.keys(projectServices).find((key) =>
+      projectServices[key].service === "certificatemanager.googleapis.com"
+    )
+    expect(certManagerKey).toBeDefined()
+  })
+
+  it("should create DNS A record for root domain", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const dnsRecords = resources.google_dns_record_set
+
+    const rootRecordKey = Object.keys(dnsRecords).find((key) => key.includes("dns-root-a"))
+    expect(rootRecordKey).toBeDefined()
+    expect(dnsRecords[rootRecordKey].name).toBe("koborin.ai.")
+    expect(dnsRecords[rootRecordKey].type).toBe("A")
+    expect(dnsRecords[rootRecordKey].ttl).toBe(300)
+    expect(dnsRecords[rootRecordKey].managed_zone).toContain("data.google_dns_managed_zone.dns-zone")
+  })
+
+  it("should create DNS A record for dev subdomain", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const dnsRecords = resources.google_dns_record_set
+
+    const devRecordKey = Object.keys(dnsRecords).find((key) => key.includes("dns-dev-a"))
+    expect(devRecordKey).toBeDefined()
+    expect(dnsRecords[devRecordKey].name).toBe("dev.koborin.ai.")
+    expect(dnsRecords[devRecordKey].type).toBe("A")
+    expect(dnsRecords[devRecordKey].ttl).toBe(300)
+    expect(dnsRecords[devRecordKey].managed_zone).toContain("data.google_dns_managed_zone.dns-zone")
+  })
+
+  it("should reference existing DNS managed zone", () => {
+    const synthesized = Testing.synth(stack)
+    const dataSources = JSON.parse(synthesized).data
+    const dnsZones = dataSources.google_dns_managed_zone
+
+    const zoneKey = Object.keys(dnsZones)[0]
+    expect(dnsZones[zoneKey].name).toBe("koborin-ai")
+  })
 })
