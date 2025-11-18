@@ -335,8 +335,10 @@ export class SharedStack extends TerraformStack {
       "roles/monitoring.admin",
       "roles/resourcemanager.projectIamAdmin",
       "roles/iam.serviceAccountUser",
+      "roles/iam.workloadIdentityPoolAdmin",
       "roles/serviceusage.serviceUsageAdmin",
       "roles/storage.objectAdmin",
+      "roles/dns.admin",
     ]
 
     terraformRoles.forEach((role) => {
