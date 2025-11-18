@@ -96,5 +96,17 @@ describe("DevStack", () => {
     const serviceKey = Object.keys(cloudRunServices)[0]
     expect(cloudRunServices[serviceKey].ingress).toBe("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER")
   })
+
+  it("should grant run.invoker to the IAP service agent", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const iamMembers = resources.google_cloud_run_v2_service_iam_member
+
+    expect(iamMembers).toBeDefined()
+    const memberKey = Object.keys(iamMembers)[0]
+    expect(iamMembers[memberKey].role).toBe("roles/run.invoker")
+    expect(iamMembers[memberKey].member).toContain("serviceAccount:service-")
+    expect(iamMembers[memberKey].member).toContain("@gcp-sa-iap.iam.gserviceaccount.com")
+  })
 })
 

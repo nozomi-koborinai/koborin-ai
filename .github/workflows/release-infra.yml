@@ -166,7 +166,8 @@ jobs:
             APPLY_ARGS="$APPLY_ARGS -var=oauth_client_id=${{ env.OAUTH_CLIENT_ID }}"
             APPLY_ARGS="$APPLY_ARGS -var=oauth_client_secret=${{ env.OAUTH_CLIENT_SECRET }}"
           else
-            # Dev/Prod stacks only need image URI
+            # Dev/Prod stacks need project number for IAP service agent and image URI
+            APPLY_ARGS="$APPLY_ARGS -var=project_number=${{ env.PROJECT_NUMBER }}"
             APPLY_ARGS="$APPLY_ARGS -var=image_uri=${{ steps.current-image.outputs.CURRENT_IMAGE }}"
           fi
           

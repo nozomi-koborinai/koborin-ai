@@ -1,6 +1,5 @@
 import { CloudRunV2Service } from "@cdktf/provider-google/lib/cloud-run-v2-service"
 import { CloudRunV2ServiceIamMember } from "@cdktf/provider-google/lib/cloud-run-v2-service-iam-member"
-import { DataGoogleProject } from "@cdktf/provider-google/lib/data-google-project"
 import { GoogleProvider } from "@cdktf/provider-google/lib/provider"
 import { TerraformStack } from "cdktf"
 import { GcsBackend } from "cdktf/lib/backends/gcs-backend"
@@ -25,10 +24,6 @@ export class ProdStack extends TerraformStack {
     new GoogleProvider(this, "google-prod", {
       project: config.projectId,
       region: "asia-northeast1",
-    })
-
-    const project = new DataGoogleProject(this, "project", {
-      projectId: config.projectId,
     })
 
     const webProd = new CloudRunV2Service(this, "web-prod", {
@@ -70,7 +65,7 @@ export class ProdStack extends TerraformStack {
       location: "asia-northeast1",
       name: webProd.name,
       role: "roles/run.invoker",
-      member: `serviceAccount:service-${project.number}@gcp-sa-loadbalancing.iam.gserviceaccount.com`,
+      member: "allUsers",
     })
   }
 }

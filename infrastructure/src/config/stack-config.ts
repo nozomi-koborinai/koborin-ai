@@ -23,6 +23,7 @@ export type SharedStackConfig = {
  */
 export type EnvironmentStackConfig = {
   projectId: string
+  projectNumber: string
   stateBucket: string
   imageUri: string
 }
@@ -83,6 +84,11 @@ export function createEnvironmentStackConfig(scope: Construct): EnvironmentStack
     description: "Google Cloud Project ID.",
   }).stringValue
 
+  const projectNumber = new TerraformVariable(scope, "project_number", {
+    type: "string",
+    description: "Google Cloud Project Number.",
+  }).stringValue
+
   const stateBucket = new TerraformVariable(scope, "bucket_name", {
     type: "string",
     description: "GCS bucket used for Terraform state (shared across stacks).",
@@ -95,6 +101,7 @@ export function createEnvironmentStackConfig(scope: Construct): EnvironmentStack
 
   return {
     projectId,
+    projectNumber,
     stateBucket,
     imageUri,
   }

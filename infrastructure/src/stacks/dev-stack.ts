@@ -1,4 +1,5 @@
 import { CloudRunV2Service } from "@cdktf/provider-google/lib/cloud-run-v2-service"
+import { CloudRunV2ServiceIamMember } from "@cdktf/provider-google/lib/cloud-run-v2-service-iam-member"
 import { GoogleProvider } from "@cdktf/provider-google/lib/provider"
 import { TerraformStack } from "cdktf"
 import { GcsBackend } from "cdktf/lib/backends/gcs-backend"
@@ -25,7 +26,7 @@ export class DevStack extends TerraformStack {
       region: "asia-northeast1",
     })
 
-    new CloudRunV2Service(this, "web-dev", {
+    const webDev = new CloudRunV2Service(this, "web-dev", {
       project: config.projectId,
       location: "asia-northeast1",
       name: "koborin-ai-web-dev",
@@ -57,6 +58,16 @@ export class DevStack extends TerraformStack {
       lifecycle: {
         ignoreChanges: ["scaling"],
       },
+    })
+
+    // Grant Cloud Run Invoker role to IAP Service Agent
+    // IAP uses this service account to invoke the Cloud Run service after authentication
+    new CloudRunV2ServiceIamMember(this, "web-dev-iap-invoker", {
+      project: config.projectId,
+      location: "asia-northeast1",
+      name: webDev.name,
+      role: "roles/run.invoker",
+      member: `serviceAccount:service-${config.projectNumber}@gcp-sa-iap.iam.gserviceaccount.com`,
     })
   }
 }
