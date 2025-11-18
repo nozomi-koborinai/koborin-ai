@@ -1,4 +1,6 @@
 import { CloudRunV2Service } from "@cdktf/provider-google/lib/cloud-run-v2-service"
+import { CloudRunV2ServiceIamMember } from "@cdktf/provider-google/lib/cloud-run-v2-service-iam-member"
+import { DataGoogleProject } from "@cdktf/provider-google/lib/data-google-project"
 import { GoogleProvider } from "@cdktf/provider-google/lib/provider"
 import { TerraformStack } from "cdktf"
 import { GcsBackend } from "cdktf/lib/backends/gcs-backend"
@@ -25,7 +27,11 @@ export class ProdStack extends TerraformStack {
       region: "asia-northeast1",
     })
 
-    new CloudRunV2Service(this, "web-prod", {
+    const project = new DataGoogleProject(this, "project", {
+      projectId: config.projectId,
+    })
+
+    const webProd = new CloudRunV2Service(this, "web-prod", {
       project: config.projectId,
       location: "asia-northeast1",
       name: "n-koborinai-me-web-prod",
@@ -57,6 +63,14 @@ export class ProdStack extends TerraformStack {
       lifecycle: {
         ignoreChanges: ["scaling"],
       },
+    })
+
+    new CloudRunV2ServiceIamMember(this, "web-prod-invoker", {
+      project: config.projectId,
+      location: "asia-northeast1",
+      name: webProd.name,
+      role: "roles/run.invoker",
+      member: `service-${project.number}@serverless-robot-prod.iam.gserviceaccount.com`,
     })
   }
 }
