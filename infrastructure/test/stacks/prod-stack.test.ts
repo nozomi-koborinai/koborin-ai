@@ -108,8 +108,7 @@ describe("ProdStack", () => {
     const iamConfig = iamMembers[iamKey]
 
     expect(iamConfig.role).toBe("roles/run.invoker")
-    expect(iamConfig.member).toContain("serviceAccount:service-")
-    expect(iamConfig.member).toContain("gcp-sa-loadbalancing.iam.gserviceaccount.com")
+    expect(iamConfig.member).toBe("allUsers")
   })
 })
 
