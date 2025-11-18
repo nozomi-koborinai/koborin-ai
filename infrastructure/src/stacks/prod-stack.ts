@@ -70,7 +70,7 @@ export class ProdStack extends TerraformStack {
       location: "asia-northeast1",
       name: webProd.name,
       role: "roles/run.invoker",
-      member: `service-${project.number}@serverless-robot-prod.iam.gserviceaccount.com`,
+      member: `serviceAccount:service-${project.number}@serverless-robot-prod.iam.gserviceaccount.com`,
     })
   }
 }
