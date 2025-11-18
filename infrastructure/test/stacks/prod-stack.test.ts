@@ -96,5 +96,19 @@ describe("ProdStack", () => {
     const serviceKey = Object.keys(cloudRunServices)[0]
     expect(cloudRunServices[serviceKey].ingress).toBe("INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER")
   })
+
+  it("should grant run.invoker to the serverless robot service account", () => {
+    const synthesized = Testing.synth(stack)
+    const resources = JSON.parse(synthesized).resource
+    const iamMembers = resources.google_cloud_run_v2_service_iam_member
+
+    expect(iamMembers).toBeDefined()
+
+    const iamKey = Object.keys(iamMembers)[0]
+    const iamConfig = iamMembers[iamKey]
+
+    expect(iamConfig.role).toBe("roles/run.invoker")
+    expect(iamConfig.member).toContain("serverless-robot-prod.iam.gserviceaccount.com")
+  })
 })
 
