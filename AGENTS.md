@@ -27,8 +27,8 @@ This document is a quick guide for any contributors or AI agents that touch the 
 3. **Providers**: `google` and `google-beta` pinned to `~> 6.50` (see `cdktf.json`). Run `npm run build && npm run test` inside `infrastructure/` before opening a PR.
 4. **Environments**:
    - `shared`: APIs, Artifact Registry, static IP, Managed SSL cert, HTTPS LB (NEG, Backend Service, URL Map, Target Proxy, Forwarding Rule), IAP configuration for dev.
-   - `dev`: Cloud Run service `koborin-ai-web-dev` (to be created).
-   - `prod`: Cloud Run service `koborin-ai-web-prod` (to be created).
+  - `dev`: Cloud Run service `koborin-ai-web-dev` (to be created).
+  - `prod`: Cloud Run service `koborin-ai-web-prod` (to be created).
 5. **Architecture Design**:
    - `shared` stack creates the entire HTTPS load balancer including Serverless NEGs and Backend Services for both dev/prod.
    - NEGs reference Cloud Run services by name (string), so Cloud Run services can be created later in dev/prod stacks without circular dependencies.
